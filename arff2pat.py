@@ -8,6 +8,11 @@ Each nominal attribute and class label is mapped to a N-width binary string
 Numeric attributes are used as input directly.
 Numerical class labels are scaled to [0,1]
 
+If discardmissing is given as a yes-like value (e.g. YES, Y, yes, y, true, TRUE),
+then numerical values that are missing are set to 0 and nominal values that 
+are missing are set to a N-width binary string (where N is the number of
+possible values for that attribute) set to all zeros.
+
 Usage:
 chmod u+x arff2pat.py
 ./arff2pat.py
@@ -37,8 +42,15 @@ No. of output units : {outputs}
 NUMERIC_ATTRIBUTE_TYPES = ['real','REAL','numeric','NUMERIC']
 
 def encode_nominal(num_values, flag_index):
+    """
+    Encodes a nominal variable as a binary string
+    Sets the "bit" for the nominal value 
+    If the flag_index passed is -1, its a missing value 
+    encoding, so just returns all zeros
+    """
     code = ['0'] * num_values  # init
-    code[flag_index] = '1'
+    if flag_index >= 0:
+        code[flag_index] = '1'
     return " ".join(code)
 
 @click.command()
@@ -51,12 +63,20 @@ def encode_nominal(num_values, flag_index):
               prompt='Validation set size (between 0.0,1.0)',
               help='The size of the validation set as float between 0.0,1.0',
               default=0.33)
-def convert(arff, pat, testsize,validationsize):
+@click.option('--discardmissing',
+              prompt='Whether to discard missing values',
+              help='Whether to discard missing values as yes or no',
+              default='yes')
+def convert(arff, pat, testsize, validationsize, discardmissing):
     """
     Converts arff file to pat file for moving data
     between weka and javanns
     """
 
+    if discardmissing.upper() in ['YES','Y','T','TRUE']:
+        discardmissing = True
+    else: 
+        discardmissing = False
     testsize = float(testsize)
     validationsize = float(validationsize)
     outputs = 0  # number of output attributes (n-width)
@@ -77,7 +97,7 @@ def convert(arff, pat, testsize,validationsize):
             # if we're in the data section
             if data_found:
                 # ignore lines with missing values
-                if '?' in line:
+                if '?' in line and discardmissing:
                     rows_with_missing_data += 1
                 else:
                     data.append(line.strip())
@@ -92,6 +112,8 @@ def convert(arff, pat, testsize,validationsize):
                     attr['name'] = values[1].strip()
                     attr['type'] = values[2].strip().upper()
                     attr['values'] = [{}]
+                    # neural network missing value encoding
+                    attr['nn_missing'] = '0'
                     outputs = 1
                 # else if the line contains { it is nominal so we need to encode
                 # into an N-length string binary form
@@ -108,6 +130,9 @@ def convert(arff, pat, testsize,validationsize):
                                                 'orig': category.strip() })
                         i += 1
                     outputs = i
+                    # neural network missing values encoding
+                    attr['nn_missing'] = encode_nominal(outputs, -1) 
+                    
                     for dic in attr['values']:
                         dic['code'] = encode_nominal(outputs, dic['code'])
                 attributes.append(attr)
@@ -121,13 +146,29 @@ def convert(arff, pat, testsize,validationsize):
     encoded_data = []
     inputs = sum([len(attr['values']) for attr in attributes]) - outputs
 
+    encode_missing_messages = {}
+
     ## encode data
     for d in data:
         fields = d.split(',')
         for i in range(0, len(fields)):
             if attributes[i]['type'] == 'NOMINAL':
                 for code in attributes[i]['values']:
-                    if fields[i] == code['orig']:
+                    # if missing values aren't discarded and this is a missing
+                    if not discardmissing and fields[i] == '?':
+                        # encode it with the appropriate missing code
+                        # as set earlier
+                        orig = fields[i]
+                        fields[i] = attributes[i]['nn_missing']
+                        if i in encode_missing_messages:
+                            encode_missing_messages[i]['count'] = \
+                              encode_missing_messages[i]['count'] + 1
+                        else:
+                            encode_missing_messages[i] = {}
+                            encode_missing_messages[i]['code'] = fields[i]
+                            encode_missing_messages[i]['orig'] = orig
+                            encode_missing_messages[i]['count'] = 1
+                    elif fields[i] == code['orig']:
                         fields[i] = code['code']
 
         encoded_data.append(fields)
@@ -209,18 +250,28 @@ def convert(arff, pat, testsize,validationsize):
 
         print("\n\nFile output to: %s" % pat)
 
-    print("\nDiscarded %d cases with missing data" % rows_with_missing_data)
+    if rows_with_missing_data == 0 and not(encode_missing_messages):
+        print("\nNo missing values were detected")
+    elif discardmissing:
+        print("\nDiscarded %d cases with missing data" % rows_with_missing_data)
+    
     print("\nNumber of inputs: %d" % inputs)
     print("\nNumber of outputs: %d" % outputs)
     print("\nAttribute encoding (the last listed is the class label)")
 
+	# print out encodings
+    idx = -1
     for attribute in attributes:
+        idx += 1
         print(attribute['name'])
         if attribute['type'] == 'NOMINAL':
             for value in attribute['values']:
                     print("\t%s -> %s" % (value['orig'], value['code']))
         else:
             print("\t%s" % attribute['type'])
+        if idx in encode_missing_messages:
+            dic = encode_missing_messages[idx]
+            print("\t%s -> %s (%d cases)" % (dic['orig'], dic['code'], dic['count']))
 
 if __name__ == '__main__':
     convert()

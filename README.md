@@ -34,14 +34,18 @@ Either git clone or download this repositiory and from the directory you can run
 Enter the names of input arff file, output pat file and float values for the test split (e.g. 0.33 is 33% of full set goes to test set) and validation split.
 
 ```
-./arff2pat.py --arff=weather.numeric.arff --pat=weather.numeric.pat --testsize=0.33 --validationsize=0.1
+./arff2pat.py --arff=weather.numeric.arff --pat=weather.numeric.pat --testsize=0.33 --validationsize=0.1 --discardmissing=no
 ```
 
 If test size is set to 0.0 it will only convert the supplied file directly to an equivalent pat file.
 
 If test size is > 0.0, train, validation (if validation size > 0.0)  and test files will be generated.
 
-If any rows contain missing data (? values) these will be discarded before the train/test/validation split (or before the output where no split required).
+If any rows contain missing data (? values) these will be either be discarded before the train/test/validation split (or before the output where no split required) where discardmissing is set to yes (default) or replaced with approrpiate encoding if discardmissing set to no.
+
+Missing numerical values are set to 0 when discardmissing is set to no.
+
+Missing nominal values are set to an N-width binary string set to all zeros where N is the number of values the variable can take on.
 
 ## Edits / enhancements in this fork
 
