@@ -259,7 +259,7 @@ def convert(arff, pat, testsize, validationsize, discardmissing):
     print("\nNumber of outputs: %d" % outputs)
     print("\nAttribute encoding (the last listed is the class label)")
 
-	# print out encodings
+    # print out encodings
     idx = -1
     for attribute in attributes:
         idx += 1
