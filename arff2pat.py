@@ -53,6 +53,13 @@ def encode_nominal(num_values, flag_index):
         code[flag_index] = '1'
     return " ".join(code)
 
+def normalise_discard_missing_flag(flag):
+    if flag.upper() in ['YES','Y','T','TRUE']:
+         flag = True
+    else: 
+        flag = False
+    return flag
+
 @click.command()
 @click.option('--arff', prompt='ARFF file', help='The input ARFF file')
 @click.option('--pat', prompt='Output pat file', help='The output PAT file')
@@ -63,20 +70,23 @@ def encode_nominal(num_values, flag_index):
               prompt='Validation set size (between 0.0,1.0)',
               help='The size of the validation set as float between 0.0,1.0',
               default=0.33)
-@click.option('--discardmissing',
-              prompt='Whether to discard missing values',
-              help='Whether to discard missing values as yes or no',
+@click.option('--discardmissingnominal',
+              prompt='Whether to discard rows with missing nominal values',
+              help='Whether to discard rows with missing values as yes or no',
               default='yes')
-def convert(arff, pat, testsize, validationsize, discardmissing):
-    """
+@click.option('--discardmissingnumeric',
+              prompt="Whether to discard rows with missing numerical values",
+              help='Whether to discard rows with missing numerica values as yes or no',
+              default='yes')
+def convert(arff, pat, testsize, validationsize, discardmissingnominal, discardmissingnumeric):
+    """    
     Converts arff file to pat file for moving data
     between weka and javanns
     """
 
-    if discardmissing.upper() in ['YES','Y','T','TRUE']:
-        discardmissing = True
-    else: 
-        discardmissing = False
+    discardmissingnominal = normalise_discard_missing_flag(discardmissingnominal)
+    discardmissingnumeric = normalise_discard_missing_flag(discardmissingnumeric)
+
     testsize = float(testsize)
     validationsize = float(validationsize)
     outputs = 0  # number of output attributes (n-width)
@@ -97,7 +107,7 @@ def convert(arff, pat, testsize, validationsize, discardmissing):
             # if we're in the data section
             if data_found:
                 # ignore lines with missing values
-                if '?' in line and discardmissing:
+                if '?' in line and discardmissingnominal and discardmissingnumeric:
                     rows_with_missing_data += 1
                 else:
                     data.append(line.strip())
@@ -148,28 +158,53 @@ def convert(arff, pat, testsize, validationsize, discardmissing):
 
     encode_missing_messages = {}
 
-    ## encode data
+    # encode data
+    line_num = 0
     for d in data:
+        line_num += 1
         fields = d.split(',')
+        # for each field of this row of data
         for i in range(0, len(fields)):
+            # if its a nominal value
             if attributes[i]['type'] == 'NOMINAL':
-                for code in attributes[i]['values']:
-                    # if missing values aren't discarded and this is a missing
-                    if not discardmissing and fields[i] == '?':
+                # if its a missing value
+                if fields[i] == '?':
+                    # if we are discarding rows with missing nominal values
+                    if discardmissingnominal:
+                        continue # do not append this row to encoded data
+                    else:
                         # encode it with the appropriate missing code
                         # as set earlier
                         orig = fields[i]
                         fields[i] = attributes[i]['nn_missing']
+                        # increment if already in the dictionary
                         if i in encode_missing_messages:
-                            encode_missing_messages[i]['count'] = \
-                              encode_missing_messages[i]['count'] + 1
+                            encode_missing_messages[i]['count'] = encode_missing_messages[i]['count'] + 1
+                        # otherwise, add it to the dictionary and set to one
                         else:
                             encode_missing_messages[i] = {}
                             encode_missing_messages[i]['code'] = fields[i]
                             encode_missing_messages[i]['orig'] = orig
                             encode_missing_messages[i]['count'] = 1
-                    elif fields[i] == code['orig']:
-                        fields[i] = code['code']
+                else: # not a missing value, so encode
+                    field_set = False
+                    for code in attributes[i]['values']:
+                        if fields[i] == code['orig']:
+                            fields[i] = code['code']
+                            field_set = True
+                    if not field_set:
+                        print("There was a problem on data row {}".format(line_num))
+            # if its a numeric value
+            else:
+                # if its a missing value
+                if fields[i] == '?':
+                    # if we are discarding rows with missing numeric values
+                    if discardmissingnumeric:
+                        continue # do not append this row to encoded data
+                    else: # encode as zero
+                        fields[i] = '0'
+                else: # value is not missing
+                    pass # we keep the value 
 
         encoded_data.append(fields)
 
@@ -252,7 +287,7 @@ def convert(arff, pat, testsize, validationsize, discardmissing):
 
     if rows_with_missing_data == 0 and not(encode_missing_messages):
         print("\nNo missing values were detected")
-    elif discardmissing:
+    elif discardmissingnominal or discardmissingnumeric:
         print("\nDiscarded %d cases with missing data" % rows_with_missing_data)
     
     print("\nNumber of inputs: %d" % inputs)
