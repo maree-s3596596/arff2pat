@@ -9,7 +9,7 @@ Numeric attributes are used as input directly.
 Numerical class labels are scaled to [0,1]
 
 If discardmissing is given as a yes-like value (e.g. YES, Y, yes, y, true, TRUE),
-then numerical values that are missing are set to 0 and nominal values that 
+then numerical values that are missing are set to 0 and nominal values that
 are missing are set to a N-width binary string (where N is the number of
 possible values for that attribute) set to all zeros.
 
@@ -44,8 +44,8 @@ NUMERIC_ATTRIBUTE_TYPES = ['real','REAL','numeric','NUMERIC']
 def encode_nominal(num_values, flag_index):
     """
     Encodes a nominal variable as a binary string
-    Sets the "bit" for the nominal value 
-    If the flag_index passed is -1, its a missing value 
+    Sets the "bit" for the nominal value
+    If the flag_index passed is -1, its a missing value
     encoding, so just returns all zeros
     """
     code = ['0'] * num_values  # init
@@ -56,7 +56,7 @@ def encode_nominal(num_values, flag_index):
 def normalise_discard_missing_flag(flag):
     if flag.upper() in ['YES','Y','T','TRUE']:
          flag = True
-    else: 
+    else:
         flag = False
     return flag
 
@@ -79,7 +79,7 @@ def normalise_discard_missing_flag(flag):
               help='Whether to discard rows with missing numerica values as yes or no',
               default='yes')
 def convert(arff, pat, testsize, validationsize, discardmissingnominal, discardmissingnumeric):
-    """    
+    """
     Converts arff file to pat file for moving data
     between weka and javanns
     """
@@ -141,8 +141,8 @@ def convert(arff, pat, testsize, validationsize, discardmissingnominal, discardm
                         i += 1
                     outputs = i
                     # neural network missing values encoding
-                    attr['nn_missing'] = encode_nominal(outputs, -1) 
-                    
+                    attr['nn_missing'] = encode_nominal(outputs, -1)
+
                     for dic in attr['values']:
                         dic['code'] = encode_nominal(outputs, dic['code'])
                 attributes.append(attr)
@@ -202,9 +202,19 @@ def convert(arff, pat, testsize, validationsize, discardmissingnominal, discardm
                     if discardmissingnumeric:
                         continue # do not append this row to encoded data
                     else: # encode as zero
-                        fields[i] = '0'
+                        orig = fields[i]
+                        fields[i] = attributes[i]['nn_missing']
+                        # increment if already in the dictionary
+                        if i in encode_missing_messages:
+                            encode_missing_messages[i]['count'] = encode_missing_messages[i]['count'] + 1
+                        # otherwise, add it to the dictionary and set to one
+                        else:
+                            encode_missing_messages[i] = {}
+                            encode_missing_messages[i]['code'] = fields[i]
+                            encode_missing_messages[i]['orig'] = orig
+                            encode_missing_messages[i]['count'] = 1
                 else: # value is not missing
-                    pass # we keep the value 
+                    pass # we keep the value
 
         encoded_data.append(fields)
 
@@ -289,7 +299,7 @@ def convert(arff, pat, testsize, validationsize, discardmissingnominal, discardm
         print("\nNo missing values were detected")
     elif discardmissingnominal or discardmissingnumeric:
         print("\nDiscarded %d cases with missing data" % rows_with_missing_data)
-    
+
     print("\nNumber of inputs: %d" % inputs)
     print("\nNumber of outputs: %d" % outputs)
     print("\nAttribute encoding (the last listed is the class label)")
